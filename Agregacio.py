@@ -21,16 +21,73 @@
  *                                                                         *
  ***************************************************************************/
 """
+import processing
+import sys
+import os
+
 from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
 
+
+from os.path import expanduser
+from PyQt5 import QtCore
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import QAction,QMessageBox,QTableWidgetItem,QApplication,QSizePolicy,QGridLayout,QDialogButtonBox,QFileDialog,QDockWidget,QProgressBar,QInputDialog,QLineEdit,QColorDialog,QToolBar,QWidget
+from qgis.core import QgsMapLayer,QgsWkbTypes
+from qgis.core import QgsDataSourceUri
+from qgis.core import QgsVectorLayer
+from qgis.core import QgsField
+from qgis.core import QgsVectorFileWriter
+from qgis.core import QgsGraduatedSymbolRenderer
+from qgis.core import QgsCategorizedSymbolRenderer
+from qgis.core import QgsGradientColorRamp
+from qgis.core import QgsProject
+from qgis.core import QgsRendererRange
+from qgis.core import QgsSymbol
+from qgis.core import QgsFillSymbol
+from qgis.core import QgsLineSymbol
+from qgis.core import QgsSymbolLayerRegistry
+from qgis.core import QgsRandomColorRamp
+from qgis.core import QgsRendererRangeLabelFormat
+from qgis.core import QgsLayerTreeLayer
+from qgis.core import QgsRenderContext
+from qgis.core import QgsPalLayerSettings
+from qgis.core import QgsTextFormat
+from qgis.core import QgsTextBufferSettings
+from qgis.core import QgsVectorLayerSimpleLabeling
+from qgis.core import QgsProcessingFeedback, Qgis
+from qgis.core import QgsWkbTypes,QgsCoordinateReferenceSystem,QgsCoordinateTransform
+from qgis.core import QgsVectorLayerExporter
+from string import ascii_letters, digits
+
+from qgis.gui import QgsMessageBar,QgsTabWidget
+import psycopg2
+import unicodedata
+import datetime
+import time
+from qgis.utils import iface
+from PyQt5.QtSql import *
+import qgis.utils
+import collections
 # Initialize Qt resources from file resources.py
 from .resources import *
 # Import the code for the dialog
 from .Agregacio_dialog import AgregacioDialog
 import os.path
+from math import sqrt
+from macpath import curdir
+import csv
 
+entitat_poi=""
+Fitxer=""
+Path_Inicial=expanduser("~")
+progress=None
+Versio_modul="V_Q3.210215"
+geometria=""
+QEstudis=None
+Detall_MEM=""
 
 class Agregacio:
     """QGIS Plugin Implementation."""
@@ -57,11 +114,35 @@ class Agregacio:
         if os.path.exists(locale_path):
             self.translator = QTranslator()
             self.translator.load(locale_path)
-            QCoreApplication.installTranslator(self.translator)
-
+            if qVersion() > '4.3.3':
+                QCoreApplication.installTranslator(self.translator)
+        
+        self.dlg = AgregacioDialog()
+        self.dlg.btoSortir.clicked.connect(self.on_click_Sortir)
+        self.dlg.Resum_Legend.currentIndexChanged.connect(self.on_Change_ComboResum)
+        self.dlg.Detall_Legend.currentIndexChanged.connect(self.on_Change_ComboDetall)
+        self.dlg.Operacio.currentIndexChanged.connect(self.on_Change_ComboOperacio)
+        self.dlg.atr_Resum.itemClicked.connect(self.on_click_atr_Resum)
+        self.dlg.atr_Detall.itemClicked.connect(self.on_click_atr_Detall)
+        self.dlg.Camps_list.itemClicked.connect(self.on_click_Camps_list)
+        self.dlg.btoInici.clicked.connect(self.on_click_Inici)
+        self.dlg.Resum_Reload.clicked.connect(self.Recarga_Llegenda_Resum)
+        self.dlg.Detall_Reload.clicked.connect(self.Recarga_Llegenda_Detall)
+        self.dlg.Espacial_chk.stateChanged.connect(self.on_check_Espacial_chk)
+        self.dlg.Atributs_chk.stateChanged.connect(self.on_check_Atributs_chk)
+        QgsProject.instance().layersAdded.connect(self.on_layer_added)
         # Declare instance attributes
         self.actions = []
-        self.menu = self.tr(u'&Agregacio')
+        self.menu = self.tr(u'&CCU')
+
+        trobat=False
+        for x in iface.mainWindow().findChildren(QToolBar,'CCU'): 
+            self.toolbar = x
+            trobat=True
+        
+        if not trobat:
+            self.toolbar = self.iface.addToolBar('CCU')
+            self.toolbar.setObjectName('CCU')
 
         # Check if plugin was started the first time in current QGIS session
         # Must be set in initGui() to survive plugin reloads
@@ -146,7 +227,7 @@ class Agregacio:
 
         if add_to_toolbar:
             # Adds plugin icon to Plugins toolbar
-            self.iface.addToolBarIcon(action)
+            self.toolbar.addAction(action)
 
         if add_to_menu:
             self.iface.addPluginToMenu(
@@ -157,13 +238,758 @@ class Agregacio:
 
         return action
 
+    def on_click_Sortir(self):
+        '''
+        Tanca la finestra del plugin 
+        '''
+        self.EstatInicial()
+        self.dlg.close()
+
+    def EstatInicial(self):
+        '''
+        @param self:
+        Resteja tots els valors per defecte del plugin: estat inicial.
+        '''
+        global micolor
+        global micolorTag
+        global Versio_modul
+        global QEstudis
+        self.dlg.progressBar.setValue(0)
+        self.dlg.progressBar.setVisible(False)
+        self.dlg.progressBar.setMaximum(100)
+        self.dlg.versio.setText(Versio_modul)
+        self.Recarga_Llegenda_Detall()
+        self.Recarga_Llegenda_Resum()
+        self.dlg.Operacio.setEnabled(False)
+        self.dlg.field_Resum.setEnabled(False)
+        self.dlg.field_Detall.setEnabled(False)
+        self.dlg.Espacial_chk.setChecked(False)
+        self.dlg.Atributs_chk.setChecked(False)
+        #self.dlg.pestanyesPrincipals.setCurrentIndex(0)
+
+        
+    def Recarga_Llegenda_Resum(self):
+        self.cerca_elements_Leyenda(self.dlg.Resum_Legend,'all')    
+
+    def Recarga_Llegenda_Detall(self):
+        self.cerca_elements_Leyenda(self.dlg.Detall_Legend,'all')    
+
+    def cerca_elements_Leyenda(self,combo,tipus): #tipus ha de ser QgsWkbTypes.Point or el que sigui
+        
+        if combo != 'Selecciona connexió':
+            try: #Accedir als elements de la llegenda que siguin de tipus punt.
+                aux = []
+                layers = QgsProject.instance().mapLayers().values()
+                for layer in layers:
+                    #print(layer.type())
+                    if layer.type()==QgsMapLayer.VectorLayer:
+                        if tipus=='all' :
+                            aux.append(layer.name())
+                        elif layer.wkbType() in tipus:
+                            aux.append(layer.name())
+
+                        
+                self.ompleCombos(combo, aux, 'Selecciona una entitat', True)
+            except Exception as ex:
+                missatge="Error al afegir els elements de la llegenda"
+                print (missatge)
+                template = "An exception of type {0} occurred. Arguments:\n{1!r}"
+                message = template.format(type(ex).__name__, ex.args)
+                print (message)
+                QMessageBox.information(None, "Error", missatge)
+                return
+            
+    def on_Change_ComboResum(self):
+        if (self.dlg.Resum_Legend.currentText()!='Selecciona una entitat'):
+            Resum_Layer = QgsProject.instance().mapLayersByName(self.dlg.Resum_Legend.currentText())
+            #self.Omple_Camps(self.dlg.Camps_list,Resum_Layer[0])
+            filtro='tot'
+            self.Omple_Camps(self.dlg.atr_Resum,Resum_Layer[0],filtro)
+        else:
+            self.dlg.atr_Resum.clear()
+        
+
+    def on_Change_ComboDetall(self):
+        if (self.dlg.Detall_Legend.currentText()!='Selecciona una entitat'):
+            self.dlg.Operacio.setEnabled(True)
+
+            filtro='tot'
+            Resum_Layer = QgsProject.instance().mapLayersByName(self.dlg.Detall_Legend.currentText())
+            self.Omple_Camps(self.dlg.atr_Detall,Resum_Layer[0],filtro)
+            self.dlg.Camps_list.clear()
+            self.dlg.Operacio.setCurrentIndex(0)
+
+        else:
+            self.dlg.Operacio.setEnabled(False)
+            self.dlg.atr_Detall.clear()
+
+    def on_Change_ComboOperacio(self):
+        if (self.dlg.Detall_Legend.currentText()!='Selecciona una entitat'):
+            Detall_Layer = QgsProject.instance().mapLayersByName(self.dlg.Detall_Legend.currentText())
+            Operacio_sel = self.dlg.Operacio.currentText()
+            filtro=''
+            if (Operacio_sel =='concatenate'):
+                filtro='text'
+            elif (Operacio_sel in ['count','count_distinct']):
+                filtro='tot'
+            elif (Operacio_sel in ['max','mean','median','min','stdev','sum']):
+                filtro='num'
+    
+            if (filtro!=''):
+                self.Omple_Camps(self.dlg.Camps_list,Detall_Layer[0],filtro)
+            else:
+                self.dlg.Camps_list.clear()
+                self.dlg.Camp_operacio.setPlainText('')
+        else:
+            self.dlg.Detall_Legend.setCurrentIndex(0)
+            self.dlg.Camp_operacio.setPlainText('')
+
+    def on_click_atr_Resum(self):
+        self.dlg.field_Resum.setPlainText(self.dlg.atr_Resum.currentItem().text())
+        #print (self.dlg.atr_Resum.currentItem().text())
+
+    def on_click_atr_Detall(self):
+        self.dlg.field_Detall.setPlainText(self.dlg.atr_Detall.currentItem().text())
+        Resum_Layer = QgsProject.instance().mapLayersByName(self.dlg.Resum_Legend.currentText())
+        filtro=''
+        if (self.dlg.atr_Detall.currentItem().toolTip() in ['2','3','4','5','6']):
+            filtro='num'
+        elif (self.dlg.atr_Detall.currentItem().toolTip() in ['7','10']):
+            filtro='text'
+        else:
+            filtro=''
+
+        if (filtro!=''):
+            self.Omple_Camps(self.dlg.atr_Resum,Resum_Layer[0],filtro)
+
+        #print (self.dlg.atr_Detall.currentItem().text())
+
+    def on_click_Camps_list(self):
+        self.dlg.Camp_operacio.setPlainText(self.dlg.Camps_list.currentItem().text())
+        #print (self.dlg.atr_Detall.currentItem().text())
+
+    def on_layer_added(self,layer):
+        global Detall_MEM
+        Detall_MEM=layer[0].id()
+
+    # Processing feedback
+    def progress_changed(self,progress):
+        #print(progress)
+        self.dlg.progressBar.setValue(progress) 
+        QApplication.processEvents()
+    
+        
+    def Agregacio(self,Entitat_Resum,Entitat_Detall,operacion,camp,tipus,operacio_aggregate,Camp_out):
+        global Detall_MEM
+        f = QgsProcessingFeedback()
+        f.progressChanged.connect(self.progress_changed)
+        if (Qgis.QGIS_VERSION_INT < 30600):
+            sortida='memory:'
+        else:
+            sortida='TEMPORARY_OUTPUT'
+        
+        alg={
+            'FIELD_LENGTH': 80,
+            'FIELD_NAME': 'UUID',
+            'FIELD_PRECISION': 3,
+            'FIELD_TYPE': 2,
+            'FORMULA': 'uuid()',
+            'INPUT' : ''+Entitat_Resum+'',
+            'NEW_FIELD': True,
+            'OUTPUT': 'memory:'
+        }
+        ILLES_UNIQUE=processing.run('qgis:fieldcalculator', alg, feedback=f)
+        #QgsProject.instance().addMapLayer(ILLES_UNIQUE['OUTPUT'])
+
+        alg={
+            'FIELD_LENGTH': 80,
+            'FIELD_NAME': 'UUID',
+            'FIELD_PRECISION': 3,
+            'FIELD_TYPE': 2,
+            'FORMULA': 'uuid()',
+            'INPUT' : ''+Entitat_Detall+'',
+            'NEW_FIELD': True,
+            #'OUTPUT': 'memory:'
+            'OUTPUT': ''+sortida+''
+        }
+        Entitat_Detall_MEM=processing.run('qgis:fieldcalculator', alg, feedback=f)
+        
+        QgsProject.instance().addMapLayer(Entitat_Detall_MEM['OUTPUT'],False)
+        QApplication.processEvents()
+
+        operador=operacio_aggregate
+        alg_params = {
+            # Entitat Resum
+            'INPUT': ILLES_UNIQUE['OUTPUT'],
+            'GROUP_BY': 'UUID',
+            'AGGREGATES' : [{'aggregate': 'first_value',
+                             'delimiter': ';', 
+                             'input': 'UUID', 
+                             'length': 80, 
+                             'name': 'UUID', 
+                             'precision': 0, 
+                             'type': 10
+                            },
+                            {'aggregate': 'first_value',
+                             'delimiter': ';', 
+                             #'input': 'aggregate(layer:=\''+Entitat_Detall+'\', aggregate:=\''+operador+'\',expression:="'+camp+'", filter:='+operacion+'( $geometry , geometry( @parent)),concatenator:=\'-\')', 
+                             'input': 'aggregate(layer:=\''+Detall_MEM+'\', aggregate:=\''+operador+'\',expression:="'+camp+'", filter:='+operacion+'( $geometry , geometry( @parent)),concatenator:=\'-\')', 
+                             'length': -1, 
+                             'name': Camp_out, 
+                             'precision': -1, 
+                             'type': tipus
+                            }],
+            'OUTPUT': ''+sortida+''
+        }
+
+        #print (alg_params)
+        pep=processing.run('qgis:aggregate', alg_params, feedback=f)
+        #QgsProject.instance().addMapLayer(pep['OUTPUT'])
+        QgsProject.instance().removeMapLayer(Detall_MEM)
+        
+        #'output_84afc2ff_07a0_4771_9dd7_570fcd85e1dc',
+        alg={
+            'INPUT' : ILLES_UNIQUE['OUTPUT'],
+            'FIELD' : 'UUID',
+            'INPUT_2' : pep['OUTPUT'],
+            'FIELD_2' : 'UUID',
+            'FIELDS_TO_COPY' : [Camp_out],
+            'METHOD' : 1,
+            'DISCARD_NONMATCHING' : False,
+            'PREFIX' : '',
+            'OUTPUT': ''+sortida+''
+            }
+        #print(alg)
+        pep2 = processing.run('native:joinattributestable', alg, feedback=f)
+        #QgsProject.instance().addMapLayer(pep2['OUTPUT'])
+        
+        #QgsProject.instance().addMapLayer(pep['OUTPUT'])      
+        alg = {
+            'INPUT': pep2['OUTPUT'],
+            'COLUMN': 'UUID',
+            'OUTPUT': ''+sortida+''
+        }
+        
+        pep3 = processing.run('qgis:deletecolumn', alg, feedback=f)
+        pep3['OUTPUT'].setName('Agregacio')
+        return pep3['OUTPUT']
+
+    def Agregacio_atr(self,Entitat_Resum,Entitat_Detall,camp_Resum,camp_Detall,camp_operacio,tipus,operacio_aggregate,Camp_out):
+        global Detall_MEM
+        f = QgsProcessingFeedback()
+        f.progressChanged.connect(self.progress_changed)
+        if (Qgis.QGIS_VERSION_INT < 30600):
+            sortida='memory:'
+        else:
+            sortida='TEMPORARY_OUTPUT'
+        
+        alg={
+            'FIELD_LENGTH': 80,
+            'FIELD_NAME': 'UUID',
+            'FIELD_PRECISION': 3,
+            'FIELD_TYPE': 2,
+            'FORMULA': 'uuid()',
+            'INPUT' : ''+Entitat_Resum+'',
+            'NEW_FIELD': True,
+            'OUTPUT': ''+sortida+''
+        }
+        ILLES_UNIQUE=processing.run('qgis:fieldcalculator', alg, feedback=f)
+        #QgsProject.instance().addMapLayer(ILLES_UNIQUE['OUTPUT'])
+        alg={
+            'FIELD_LENGTH': 80,
+            'FIELD_NAME': 'UUID',
+            'FIELD_PRECISION': 3,
+            'FIELD_TYPE': 2,
+            'FORMULA': 'uuid()',
+            'INPUT' : ''+Entitat_Detall+'',
+            'NEW_FIELD': True,
+            #'OUTPUT': 'memory:'
+            'OUTPUT': ''+sortida+''
+        }
+        Entitat_Detall_MEM=processing.run('qgis:fieldcalculator', alg, feedback=f)
+        
+        QgsProject.instance().addMapLayer(Entitat_Detall_MEM['OUTPUT'],False)
+        QApplication.processEvents()
+        operador=operacio_aggregate
+        alg_params = {
+            # Entitat Resum
+            'INPUT': ILLES_UNIQUE['OUTPUT'],
+            'GROUP_BY': 'UUID',
+            'AGGREGATES' : [{'aggregate': 'first_value',
+                             'delimiter': ';', 
+                             'input': 'UUID', 
+                             'length': 80, 
+                             'name': 'UUID', 
+                             'precision': 0, 
+                             'type': 10
+                            },
+                            {'aggregate': 'first_value',
+                             'delimiter': ';', 
+                             #'input': 'aggregate(layer:=\''+Entitat_Detall+'\', aggregate:=\''+operador+'\',expression:="'+camp_operacio+'", filter:="'+camp_Detall+'"=attribute(@parent,\''+camp_Resum+'\'),concatenator:=\';\')',
+                             'input': 'aggregate(layer:=\''+Detall_MEM+'\', aggregate:=\''+operador+'\',expression:="'+camp_operacio+'", filter:="'+camp_Detall+'"=attribute(@parent,\''+camp_Resum+'\'),concatenator:=\';\')',
+                             'length': -1, 
+                             'name': Camp_out, 
+                             'precision': -1, 
+                             'type': tipus
+                            }],
+            #'AGGREGATES' : [{'aggregate': 'first_value', 'delimiter': ';', 'input': 'aggregate(layer:=\'Barris_7d071280_7e84_4d37_99bd_0eb61becb7d6\', aggregate:=\'concatenate\',expression:="nombarri", filter:=intersects( $geometry , geometry( @parent)),concatenator:=\'-\')', 'length': 0, 'name': 'Nombarri', 'precision': 0, 'type': 10}],
+            'OUTPUT': ''+sortida+''
+        }
+
+        #print (alg_params)
+        pep=processing.run('qgis:aggregate', alg_params, feedback=f)
+        #QgsProject.instance().addMapLayer(pep['OUTPUT'])
+        QgsProject.instance().removeMapLayer(Detall_MEM)
+        
+        #'output_84afc2ff_07a0_4771_9dd7_570fcd85e1dc',
+        alg={
+            'INPUT' : ILLES_UNIQUE['OUTPUT'],
+            'FIELD' : 'UUID',
+            'INPUT_2' : pep['OUTPUT'],
+            'FIELD_2' : 'UUID',
+            'FIELDS_TO_COPY' : [Camp_out],
+            'METHOD' : 1,
+            'DISCARD_NONMATCHING' : False,
+            'PREFIX' : '',
+            'OUTPUT': ''+sortida+''
+            }
+        #print(alg)
+        pep2 = processing.run('native:joinattributestable', alg, feedback=f)
+        #QgsProject.instance().addMapLayer(pep2['OUTPUT'])
+        
+        #QgsProject.instance().addMapLayer(pep['OUTPUT'])      
+        alg = {
+            'INPUT': pep2['OUTPUT'],
+            'COLUMN': 'UUID',
+            'OUTPUT': ''+sortida+''
+        }
+        
+        pep3 = processing.run('qgis:deletecolumn', alg, feedback=f)
+        pep3['OUTPUT'].setName('Agregacio')
+        return pep3['OUTPUT']
+
+    def Agregacio_atr_addexpresion(self,Entitat_Resum,Entitat_Detall,camp_Resum,camp_Detall,camp_operacio,tipus,operacio_aggregate,Camp_out):
+        global Detall_MEM
+        f = QgsProcessingFeedback()
+        f.progressChanged.connect(self.progress_changed)
+        if (Qgis.QGIS_VERSION_INT < 30600):
+            sortida='memory:'
+        else:
+            sortida='TEMPORARY_OUTPUT'
+        
+        alg={
+            'FIELD_LENGTH': 80,
+            'FIELD_NAME': 'UUID',
+            'FIELD_PRECISION': 3,
+            'FIELD_TYPE': 2,
+            'FORMULA': 'uuid()',
+            'INPUT' : ''+Entitat_Resum.id()+'',
+            'NEW_FIELD': True,
+            'OUTPUT': ''+sortida+''
+        }
+        ILLES_UNIQUE=processing.run('qgis:fieldcalculator', alg, feedback=f)
+        #QgsProject.instance().addMapLayer(ILLES_UNIQUE['OUTPUT'])
+        alg={
+            'FIELD_LENGTH': 80,
+            'FIELD_NAME': 'UUID',
+            'FIELD_PRECISION': 3,
+            'FIELD_TYPE': 2,
+            'FORMULA': 'uuid()',
+            'INPUT' : ''+Entitat_Detall+'',
+            'NEW_FIELD': True,
+            'OUTPUT': ''+sortida+''
+        }
+        Entitat_Detall_MEM=processing.run('qgis:fieldcalculator', alg, feedback=f)
+        
+        QgsProject.instance().addMapLayer(Entitat_Detall_MEM['OUTPUT'],False)
+        QApplication.processEvents()
+        operador=operacio_aggregate
+
+
+        contador=1
+        Camp_out_temp=Camp_out  
+        while True:
+            for field in Entitat_Resum.fields():
+                print(field.name())
+                if Camp_out_temp==field.name():
+                    Camp_out_temp=Camp_out+"_"+str(contador)
+                    print("pip: "+Camp_out_temp)
+                    contador=contador+1
+                    continue
+            break
+        field = QgsField(Camp_out_temp, tipus )
+        texte='aggregate(layer:=\''+Detall_MEM+'\', aggregate:=\''+operador+'\',expression:="'+camp_operacio+'", filter:="'+camp_Detall+'"=attribute(@parent,\''+camp_Resum+'\'),concatenator:=\';\')'
+
+        Entitat_Resum.addExpressionField( texte, field )
+        #QgsProject.instance().addMapLayer(Entitat_Resum) 
+        QgsProject.instance().removeMapLayer(Detall_MEM)
+     
+        return Entitat_Resum
+
+    def Agregacio_espacial_atr(self,Entitat_Resum,Entitat_Detall,operacion,camp_Resum,camp_Detall,camp_operacio,tipus,operacio_aggregate,Camp_out):
+        global Detall_MEM
+        f = QgsProcessingFeedback()
+        f.progressChanged.connect(self.progress_changed)
+        if (Qgis.QGIS_VERSION_INT < 30600):
+            sortida='memory:'
+        else:
+            sortida='TEMPORARY_OUTPUT'
+        
+        alg={
+            'FIELD_LENGTH': 80,
+            'FIELD_NAME': 'UUID',
+            'FIELD_PRECISION': 3,
+            'FIELD_TYPE': 2,
+            'FORMULA': 'uuid()',
+            'INPUT' : ''+Entitat_Resum+'',
+            'NEW_FIELD': True,
+            'OUTPUT': ''+sortida+''
+        }
+        ILLES_UNIQUE=processing.run('qgis:fieldcalculator', alg, feedback=f)
+        #QgsProject.instance().addMapLayer(ILLES_UNIQUE['OUTPUT'])
+        
+        alg={
+            'FIELD_LENGTH': 80,
+            'FIELD_NAME': 'UUID',
+            'FIELD_PRECISION': 3,
+            'FIELD_TYPE': 2,
+            'FORMULA': 'uuid()',
+            'INPUT' : ''+Entitat_Detall+'',
+            'NEW_FIELD': True,
+            'OUTPUT': ''+sortida+''
+        }
+        Entitat_Detall_MEM=processing.run('qgis:fieldcalculator', alg, feedback=f)
+        
+        QgsProject.instance().addMapLayer(Entitat_Detall_MEM['OUTPUT'],False)
+        QApplication.processEvents()
+
+        if self.dlg.AND_RDB.isChecked():
+            operacio_logica='and'
+        else:
+            operacio_logica='or'
+        operador=operacio_aggregate
+        alg_params = {
+            # Entitat Resum
+            'INPUT': ILLES_UNIQUE['OUTPUT'],
+            'GROUP_BY': 'UUID',
+            'AGGREGATES' : [{'aggregate': 'first_value',
+                             'delimiter': ';', 
+                             'input': 'UUID', 
+                             'length': 80, 
+                             'name': 'UUID',  
+                             'precision': 0, 
+                             'type': 10
+                            },
+                            {'aggregate': 'first_value',
+                             'delimiter': ';', 
+                             #'input': 'aggregate(layer:=\''+Entitat_Detall+'\', aggregate:=\''+operador+'\',expression:="'+camp_operacio+'", filter:=('+operacion+'( $geometry , geometry( @parent))) '+operacio_logica+' ("'+camp_Detall+'"=attribute(@parent,\''+camp_Resum+'\')),concatenator:=\';\')',
+                             'input': 'aggregate(layer:=\''+Detall_MEM+'\', aggregate:=\''+operador+'\',expression:="'+camp_operacio+'", filter:=('+operacion+'( $geometry , geometry( @parent))) '+operacio_logica+' ("'+camp_Detall+'"=attribute(@parent,\''+camp_Resum+'\')),concatenator:=\';\')',
+                             'length': -1, 
+                             'name': Camp_out, 
+                             'precision': -1, 
+                             'type': tipus
+                            }],
+            'OUTPUT': ''+sortida+''
+        }
+        #print (alg_params)
+        pep=processing.run('qgis:aggregate', alg_params, feedback=f)
+        #QgsProject.instance().addMapLayer(pep['OUTPUT'])
+        QgsProject.instance().removeMapLayer(Detall_MEM)
+        alg={
+            'INPUT' : ILLES_UNIQUE['OUTPUT'],
+            'FIELD' : 'UUID',
+            'INPUT_2' : pep['OUTPUT'],
+            'FIELD_2' : 'UUID',
+            'FIELDS_TO_COPY' : [Camp_out],
+            'METHOD' : 1,
+            'DISCARD_NONMATCHING' : False,
+            'PREFIX' : '',
+            'OUTPUT': ''+sortida+''
+            }
+        #print(alg)
+        pep2 = processing.run('native:joinattributestable', alg, feedback=f)
+        #QgsProject.instance().addMapLayer(pep2['OUTPUT'])
+        
+        #QgsProject.instance().addMapLayer(pep['OUTPUT'])      
+        alg = {
+            'INPUT': pep2['OUTPUT'],
+            'COLUMN': 'UUID',
+            'OUTPUT': ''+sortida+''
+        }
+        
+        pep3 = processing.run('qgis:deletecolumn', alg, feedback=f)
+        #print(QgsProject.instance().mapLayers().values())
+        pep3['OUTPUT'].setName('Agregacio')
+        return pep3['OUTPUT']
+   
+    def on_click_Inici(self):
+
+        global Fitxer
+        s = QSettings()
+        
+        Fitxer=datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
+        consoleWidget = iface.mainWindow().findChild( QDockWidget, 'PythonConsole' )
+        if consoleWidget is None:
+            iface.actionShowPythonDialog().trigger()
+            QApplication.processEvents()
+            consoleWidget = iface.mainWindow().findChild( QDockWidget, 'PythonConsole' )
+            consoleWidget.console.shellOut.clearConsole()
+            consoleWidget.setVisible( False )
+        
+        self.dlg.progressBar.setValue(0)
+        self.dlg.progressBar.setVisible(True)
+        #############################################################################################################
+        #    CONTROL D'ERRORRS
+        #############################################################################################################
+        if (self.dlg.Resum_Legend.currentText()=='Selecciona una entitat'):
+            QMessageBox.information(None, "Error", "S'ha de seleccionar una entitat de RESUM.")
+            return
+
+        if (self.dlg.Detall_Legend.currentText()=='Selecciona una entitat'):
+            QMessageBox.information(None, "Error", "S'ha de seleccionar una entitat de DETALL.")
+            return
+
+        #if (self.Operacion_espacial()==999 and self.dlg.Activate_spatial.isChecked()):
+        #if (self.dlg.pestanyesPrincipals.currentIndex()==0):
+        if (self.dlg.Espacial_chk.isChecked()):
+            if (self.Operacion_espacial()==999):
+                QMessageBox.information(None, "Error", "S'ha de seleccionar una Operació espacial.")
+                return
+        if (self.dlg.Atributs_chk.isChecked()):
+            if (self.dlg.field_Resum.toPlainText()==''):
+                QMessageBox.information(None, "Error", "S'ha de seleccionar un camp de l'entitat RESUM per realitzar la operació escollida.")
+                return
+
+            if (self.dlg.field_Detall.toPlainText()==''):
+                QMessageBox.information(None, "Error", "S'ha de seleccionar un camp de l'entitat DETALL per realitzar la operació escollida.")
+                return
+
+        if (self.dlg.Camps_list.count()==0):
+            QMessageBox.information(None, "Error", "S'ha de seleccionar un camp per realitzar la operació escollida.")
+            return
+
+        if (self.dlg.Camps_list.currentRow()<0):
+            QMessageBox.information(None, "Error", "S'ha de seleccionar un camp per realitzar la operació escollida.")
+            return
+
+        if (self.dlg.Camp_operacio.toPlainText()==''):
+            QMessageBox.information(None, "Error", "S'ha de seleccionar un nom de camp de sortida.")
+            return
+
+        if (set(self.dlg.Camp_operacio.toPlainText()).difference(ascii_letters + digits+'_')):
+            print (ascii_letters+digits)
+            QMessageBox.information(None, "Error", "El nom de camp no pot tenir caràcters especials.")
+            return
+
+        #############################################################################################################
+        #    FI CONTROL D'ERRORRS
+        #############################################################################################################
+        self.dlg.setEnabled(False)
+        Resum_Layer = QgsProject.instance().mapLayersByName(self.dlg.Resum_Legend.currentText())
+        Detall_Layer = QgsProject.instance().mapLayersByName(self.dlg.Detall_Legend.currentText())
+        #print(Resum_Layer[0].id())
+        #print(Detall_Layer[0].id())
+        QApplication.processEvents()
+        camp=self.dlg.Camps_list.currentItem().text()
+        Tipus=self.dlg.Camps_list.currentItem().toolTip()
+
+        #if (self.dlg.pestanyesPrincipals.currentIndex()==0):
+        if (self.dlg.Espacial_chk.isChecked() and not(self.dlg.Atributs_chk.isChecked())):
+            pep=self.Agregacio(Resum_Layer[0].id(),Detall_Layer[0].id(),self.Operacion_espacial(),camp,int(Tipus),self.dlg.Operacio.currentText(),self.dlg.Camp_operacio.toPlainText())
+            QgsProject.instance().addMapLayer(pep)
+            
+        if (not(self.dlg.Espacial_chk.isChecked()) and (self.dlg.Atributs_chk.isChecked())):
+            pep=self.Agregacio_atr(Resum_Layer[0].id(),Detall_Layer[0].id(),self.dlg.field_Resum.toPlainText(),self.dlg.field_Detall.toPlainText(),camp,int(Tipus),self.dlg.Operacio.currentText(),self.dlg.Camp_operacio.toPlainText())
+            QgsProject.instance().addMapLayer(pep)
+            #pep=self.Agregacio_atr_addexpresion(Resum_Layer[0],Detall_Layer[0].id(),self.dlg.field_Resum.toPlainText(),self.dlg.field_Detall.toPlainText(),camp,int(Tipus),self.dlg.Operacio.currentText(),self.dlg.Camp_operacio.toPlainText())
+            #QgsProject.instance().addMapLayer(pep)
+        if ((self.dlg.Espacial_chk.isChecked()) and (self.dlg.Atributs_chk.isChecked())):
+            #QMessageBox.information(None, "Info", "COMING SOON... ☺") 
+            pep=self.Agregacio_espacial_atr(Resum_Layer[0].id(),Detall_Layer[0].id(),self.Operacion_espacial(),self.dlg.field_Resum.toPlainText(),self.dlg.field_Detall.toPlainText(),camp,int(Tipus),self.dlg.Operacio.currentText(),self.dlg.Camp_operacio.toPlainText())
+            QgsProject.instance().addMapLayer(pep)
+        
+
+        self.dlg.progressBar.setValue(100)
+        self.dlg.setEnabled(True)
+        
+        QApplication.processEvents()
+
+    def on_check_Atributs_chk(self):
+        if(self.dlg.Atributs_chk.isChecked()):
+            self.dlg.Atributs_panel.setEnabled(True)
+        else:
+            self.dlg.Atributs_panel.setEnabled(False)
+
+        if(self.dlg.Espacial_chk.isChecked() and self.dlg.Atributs_chk.isChecked()):
+            self.dlg.OR_RDB.setEnabled(True)
+            self.dlg.AND_RDB.setEnabled(True)
+        else:
+            self.dlg.OR_RDB.setEnabled(False)
+            self.dlg.AND_RDB.setEnabled(False)
+
+    def on_check_Espacial_chk(self):
+        if(self.dlg.Espacial_chk.isChecked()):
+            self.dlg.Espacial_panel.setEnabled(True)
+        else:
+            self.dlg.Espacial_panel.setEnabled(False)
+
+        if(self.dlg.Espacial_chk.isChecked() and self.dlg.Atributs_chk.isChecked()):
+            self.dlg.OR_RDB.setEnabled(True)
+            self.dlg.AND_RDB.setEnabled(True)
+        else:
+            self.dlg.OR_RDB.setEnabled(False)
+            self.dlg.AND_RDB.setEnabled(False)
+
+    def Omple_Camps(self,llista,layer,filtro):
+        """Aquesta funcio omple els camps de l'entitat Detall seleccionada"""
+        llista.clear()
+        indice=0
+        for index,field in enumerate(layer.fields(),start=0):
+            if (filtro=='text'):
+                if (field.type()==10):
+                    llista.addItem(field.name())
+                    llista.item(indice).setToolTip(str(field.type()))
+                    indice=indice+1
+            elif (filtro=='num'):
+                if (field.type() in [2,3,4,5,6]):
+                    llista.addItem(field.name())
+                    llista.item(indice).setToolTip(str(field.type()))
+                    indice=indice+1
+            elif (filtro=='tot'):
+                llista.addItem(field.name())
+                llista.item(indice).setToolTip(str(field.type()))
+                indice=indice+1
+        QApplication.processEvents()
+        
+
+
+    def Operacion_espacial(self):
+        if (self.dlg.Operador_not.isChecked()):
+            operator='not '
+        else:
+            operator=''
+        '''
+        if (self.dlg.INTERSECTA.isChecked()):
+            return operator+"intersects"
+        if (self.dlg.TOCA.isChecked()):
+            return operator+"touches"
+        if (self.dlg.CONTE.isChecked()):
+            return operator+"contains"
+        if (self.dlg.SOLAPA.isChecked()):
+            return operator+"overlaps"
+        if (self.dlg.DINS.isChecked()):
+            return operator+"within"
+        if (self.dlg.CREUA.isChecked()):
+            return operator+"crosses"
+        '''
+        if (self.dlg.Operacio_cmb.currentText()=="Intersecta"):
+            return operator+"intersects"
+        if (self.dlg.Operacio_cmb.currentText()=="Toca"):
+            return operator+"touches"
+        if (self.dlg.Operacio_cmb.currentText()=="Conté"):
+            return operator+"contains"
+        if (self.dlg.Operacio_cmb.currentText()=="Solapa"):
+            return operator+"overlaps"
+        if (self.dlg.Operacio_cmb.currentText()=="Dins"):
+            return operator+"within"
+        if (self.dlg.Operacio_cmb.currentText()=="Creua"):
+            return operator+"crosses"
+
+        return 999
+    def comprobarValidez(self,vlayer,CRS):        
+        #processing.algorithmHelp("native:shortestpathpointtolayer")
+        epsg = CRS
+        
+        alg_params = {
+            'INPUT': vlayer,
+            'OPERATION': '',
+            'TARGET_CRS': QgsCoordinateReferenceSystem('EPSG:'+str(epsg)),
+            'OUTPUT': 'memory:'
+        }
+        layer_repro = processing.run('native:reprojectlayer', alg_params)
+
+        parameters= {'ERROR_OUTPUT' : 'memory:',
+                     #'IGNORE_RING_SELF_INTERSECTION' : False,
+                     'INPUT_LAYER' : layer_repro['OUTPUT'],
+                     'INVALID_OUTPUT' : 'memory:',
+                     'METHOD' : 1,
+                     'VALID_OUTPUT' : 'memory:'}
+        
+        result = processing.run('qgis:checkvalidity',parameters)
+        
+        return result['VALID_OUTPUT']
+
+    
+        
+    def tornaConnectat(self):
+        '''
+        Posa a l'etiqueta que indica les connexions
+        '''
+        self.dlg.progressBar.setValue(0)
+        self.dlg.progressBar.setVisible(False)
+        QApplication.processEvents()
+    
+    def populateComboBox(self,combo,list,predef,sort):
+        '''
+        procedure to fill specified combobox with provided list
+        '''
+        combo.blockSignals (True)
+        combo.clear()
+        model=QStandardItemModel(combo)
+        predefInList = None
+        for elem in list:
+            try:
+                item = QStandardItem(unicode(elem))
+            except TypeError:
+                item = QStandardItem(str(elem))
+            model.appendRow(item)
+            if elem == predef:
+                predefInList = elem
+        if sort:
+            model.sort(0)
+        combo.setModel(model)
+        if predef != "":
+            if predefInList:
+                combo.setCurrentIndex(combo.findText(predefInList))
+            else:
+                combo.insertItem(0,predef)
+                combo.setCurrentIndex(0)
+        combo.blockSignals (False)
+
+    def ompleCombos(self, combo, llista, predef, sort):
+        """Aquesta funci� omple els combos que li passem per par�metres"""
+        combo.blockSignals (True)
+        combo.clear()
+        model=QStandardItemModel(combo)
+        predefInList = None
+        for elem in llista:
+            try:
+                if isinstance(elem, tuple):
+                    item = QStandardItem(unicode(elem[0]))
+                else:
+                    item = QStandardItem(str(elem))
+            except TypeError:
+                item = QStandardItem(str(elem[0]))
+            model.appendRow(item)
+            if elem == predef:
+                predefInList = elem
+        combo.setModel(model)
+        if predef != "":
+            if predefInList:
+                combo.setCurrentIndex(combo.findText(predefInList))
+            else:
+                combo.insertItem(0,predef)
+                combo.setCurrentIndex(0)
+        combo.blockSignals (False)
+    
+    
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
 
         icon_path = ':/plugins/Agregacio/icon.png'
         self.add_action(
             icon_path,
-            text=self.tr(u'Aquest plugin permet fer agregacio espacial i per atributs'),
+            text=self.tr(u'Agregacions'),
             callback=self.run,
             parent=self.iface.mainWindow())
 
@@ -175,9 +1001,9 @@ class Agregacio:
         """Removes the plugin menu item and icon from QGIS GUI."""
         for action in self.actions:
             self.iface.removePluginMenu(
-                self.tr(u'&Agregacio'),
+                self.tr(u'&CCU'),
                 action)
-            self.iface.removeToolBarIcon(action)
+            self.toolbar.removeAction(action)
 
 
     def run(self):
@@ -187,10 +1013,11 @@ class Agregacio:
         # Only create GUI ONCE in callback, so that it will only load when the plugin is started
         if self.first_start == True:
             self.first_start = False
-            self.dlg = AgregacioDialog()
+        self.EstatInicial()
 
         # show the dialog
         self.dlg.show()
+        
         # Run the dialog event loop
         result = self.dlg.exec_()
         # See if OK was pressed

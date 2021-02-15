@@ -4,28 +4,28 @@
 
 [general]
 name=Agregacio
-qgisMinimumVersion=3.4
+qgisMinimumVersion=3.0
 description=Aquest plugin permet fer agregacions espaciasl i per atributs
-version=0.1
-author=Josep Lopez Xarbau
+version=Q3.210215
+author=CCU
 email=jlopez@tecnocampus.cat
 
 about=Aquest plugin permet fer agregació espacial i per atributs.
 
-tracker=http://bugs
-repository=http://repo
+tracker=CCU
+repository=CCU
 # End of mandatory metadata
 
 # Recommended items:
 
-hasProcessingProvider=no
+
 # Uncomment the following line and add your changelog:
 # changelog=
 
 # Tags are comma separated with spaces allowed
-tags=python
+tags=CCU
 
-homepage=http://homepage
+homepage=CCU
 category=Plugins
 icon=icon.png
 # experimental flag
