@@ -77,14 +77,14 @@ from .resources import *
 from .Agregacio_dialog import AgregacioDialog
 import os.path
 from math import sqrt
-from macpath import curdir
+#from macpath import curdir
 import csv
 
 entitat_poi=""
 Fitxer=""
 Path_Inicial=expanduser("~")
 progress=None
-Versio_modul="V_Q3.210215"
+Versio_modul="V_Q3.210707"
 geometria=""
 QEstudis=None
 Detall_MEM=""
