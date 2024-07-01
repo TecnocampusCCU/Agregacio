@@ -21,70 +21,35 @@
  *                                                                         *
  ***************************************************************************/
 """
-import processing
-import sys
+import datetime
 import os
-
-from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
-from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction
-
-
+import os.path
 from os.path import expanduser
-from PyQt5 import QtCore
-from PyQt5.QtCore import *
-from PyQt5.QtGui import *
-from PyQt5.QtWidgets import QAction,QMessageBox,QTableWidgetItem,QApplication,QSizePolicy,QGridLayout,QDialogButtonBox,QFileDialog,QDockWidget,QProgressBar,QInputDialog,QLineEdit,QColorDialog,QToolBar,QWidget
-from qgis.core import QgsMapLayer,QgsWkbTypes
-from qgis.core import QgsDataSourceUri
-from qgis.core import QgsVectorLayer
-from qgis.core import QgsField
-from qgis.core import QgsVectorFileWriter
-from qgis.core import QgsGraduatedSymbolRenderer
-from qgis.core import QgsCategorizedSymbolRenderer
-from qgis.core import QgsGradientColorRamp
-from qgis.core import QgsProject
-from qgis.core import QgsRendererRange
-from qgis.core import QgsSymbol
-from qgis.core import QgsFillSymbol
-from qgis.core import QgsLineSymbol
-from qgis.core import QgsSymbolLayerRegistry
-from qgis.core import QgsRandomColorRamp
-from qgis.core import QgsRendererRangeLabelFormat
-from qgis.core import QgsLayerTreeLayer
-from qgis.core import QgsRenderContext
-from qgis.core import QgsPalLayerSettings
-from qgis.core import QgsTextFormat
-from qgis.core import QgsTextBufferSettings
-from qgis.core import QgsVectorLayerSimpleLabeling
-from qgis.core import QgsProcessingFeedback, Qgis
-from qgis.core import QgsWkbTypes,QgsCoordinateReferenceSystem,QgsCoordinateTransform
-from qgis.core import QgsVectorLayerExporter
 from string import ascii_letters, digits
 
-from qgis.gui import QgsMessageBar,QgsTabWidget
-import psycopg2
-import unicodedata
-import datetime
-import time
-from qgis.utils import iface
+import processing
+from PyQt5.QtCore import *
+from PyQt5.QtGui import *
 from PyQt5.QtSql import *
-import qgis.utils
-import collections
-# Initialize Qt resources from file resources.py
-from .resources import *
+from PyQt5.QtWidgets import (QAction, QApplication, QDockWidget, QMessageBox,
+                             QToolBar)
+from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsField,
+                       QgsMapLayer, QgsProcessingFeedback, QgsProject)
+from qgis.PyQt.QtCore import QCoreApplication, QSettings, QTranslator
+from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtWidgets import QAction
+from qgis.utils import iface
+
 # Import the code for the dialog
 from .Agregacio_dialog import AgregacioDialog
-import os.path
-from math import sqrt
-#from macpath import curdir
-import csv
+# Initialize Qt resources from file resources.py
+from .resources import *
 
 entitat_poi=""
 Fitxer=""
 Path_Inicial=expanduser("~")
 progress=None
-Versio_modul="V_Q3.210707"
+Versio_modul="V_Q3.240701"
 geometria=""
 QEstudis=None
 Detall_MEM=""
@@ -346,7 +311,6 @@ class Agregacio:
 
     def on_click_atr_Resum(self):
         self.dlg.field_Resum.setPlainText(self.dlg.atr_Resum.currentItem().text())
-        #print (self.dlg.atr_Resum.currentItem().text())
 
     def on_click_atr_Detall(self):
         self.dlg.field_Detall.setPlainText(self.dlg.atr_Detall.currentItem().text())
@@ -362,11 +326,9 @@ class Agregacio:
         if (filtro!=''):
             self.Omple_Camps(self.dlg.atr_Resum,Resum_Layer[0],filtro)
 
-        #print (self.dlg.atr_Detall.currentItem().text())
 
     def on_click_Camps_list(self):
         self.dlg.Camp_operacio.setPlainText(self.dlg.Camps_list.currentItem().text())
-        #print (self.dlg.atr_Detall.currentItem().text())
 
     def on_layer_added(self,layer):
         global Detall_MEM
@@ -374,7 +336,6 @@ class Agregacio:
 
     # Processing feedback
     def progress_changed(self,progress):
-        #print(progress)
         self.dlg.progressBar.setValue(progress) 
         QApplication.processEvents()
     
@@ -399,7 +360,6 @@ class Agregacio:
             'OUTPUT': 'memory:'
         }
         ILLES_UNIQUE=processing.run('qgis:fieldcalculator', alg, feedback=f)
-        #QgsProject.instance().addMapLayer(ILLES_UNIQUE['OUTPUT'])
 
         alg={
             'FIELD_LENGTH': 80,
@@ -409,7 +369,6 @@ class Agregacio:
             'FORMULA': 'uuid()',
             'INPUT' : ''+Entitat_Detall+'',
             'NEW_FIELD': True,
-            #'OUTPUT': 'memory:'
             'OUTPUT': ''+sortida+''
         }
         Entitat_Detall_MEM=processing.run('qgis:fieldcalculator', alg, feedback=f)
@@ -432,7 +391,6 @@ class Agregacio:
                             },
                             {'aggregate': 'first_value',
                              'delimiter': ';', 
-                             #'input': 'aggregate(layer:=\''+Entitat_Detall+'\', aggregate:=\''+operador+'\',expression:="'+camp+'", filter:='+operacion+'( $geometry , geometry( @parent)),concatenator:=\'-\')', 
                              'input': 'aggregate(layer:=\''+Detall_MEM+'\', aggregate:=\''+operador+'\',expression:="'+camp+'", filter:='+operacion+'( $geometry , geometry( @parent)),concatenator:=\'-\')', 
                              'length': -1, 
                              'name': Camp_out, 
@@ -444,10 +402,8 @@ class Agregacio:
 
         #print (alg_params)
         pep=processing.run('qgis:aggregate', alg_params, feedback=f)
-        #QgsProject.instance().addMapLayer(pep['OUTPUT'])
         QgsProject.instance().removeMapLayer(Detall_MEM)
         
-        #'output_84afc2ff_07a0_4771_9dd7_570fcd85e1dc',
         alg={
             'INPUT' : ILLES_UNIQUE['OUTPUT'],
             'FIELD' : 'UUID',
@@ -459,11 +415,8 @@ class Agregacio:
             'PREFIX' : '',
             'OUTPUT': ''+sortida+''
             }
-        #print(alg)
         pep2 = processing.run('native:joinattributestable', alg, feedback=f)
-        #QgsProject.instance().addMapLayer(pep2['OUTPUT'])
         
-        #QgsProject.instance().addMapLayer(pep['OUTPUT'])      
         alg = {
             'INPUT': pep2['OUTPUT'],
             'COLUMN': 'UUID',
@@ -494,7 +447,6 @@ class Agregacio:
             'OUTPUT': ''+sortida+''
         }
         ILLES_UNIQUE=processing.run('qgis:fieldcalculator', alg, feedback=f)
-        #QgsProject.instance().addMapLayer(ILLES_UNIQUE['OUTPUT'])
         alg={
             'FIELD_LENGTH': 80,
             'FIELD_NAME': 'UUID',
@@ -503,7 +455,6 @@ class Agregacio:
             'FORMULA': 'uuid()',
             'INPUT' : ''+Entitat_Detall+'',
             'NEW_FIELD': True,
-            #'OUTPUT': 'memory:'
             'OUTPUT': ''+sortida+''
         }
         Entitat_Detall_MEM=processing.run('qgis:fieldcalculator', alg, feedback=f)
@@ -525,23 +476,19 @@ class Agregacio:
                             },
                             {'aggregate': 'first_value',
                              'delimiter': ';', 
-                             #'input': 'aggregate(layer:=\''+Entitat_Detall+'\', aggregate:=\''+operador+'\',expression:="'+camp_operacio+'", filter:="'+camp_Detall+'"=attribute(@parent,\''+camp_Resum+'\'),concatenator:=\';\')',
                              'input': 'aggregate(layer:=\''+Detall_MEM+'\', aggregate:=\''+operador+'\',expression:="'+camp_operacio+'", filter:="'+camp_Detall+'"=attribute(@parent,\''+camp_Resum+'\'),concatenator:=\';\')',
                              'length': -1, 
                              'name': Camp_out, 
                              'precision': -1, 
                              'type': tipus
                             }],
-            #'AGGREGATES' : [{'aggregate': 'first_value', 'delimiter': ';', 'input': 'aggregate(layer:=\'Barris_7d071280_7e84_4d37_99bd_0eb61becb7d6\', aggregate:=\'concatenate\',expression:="nombarri", filter:=intersects( $geometry , geometry( @parent)),concatenator:=\'-\')', 'length': 0, 'name': 'Nombarri', 'precision': 0, 'type': 10}],
             'OUTPUT': ''+sortida+''
         }
 
         #print (alg_params)
         pep=processing.run('qgis:aggregate', alg_params, feedback=f)
-        #QgsProject.instance().addMapLayer(pep['OUTPUT'])
         QgsProject.instance().removeMapLayer(Detall_MEM)
         
-        #'output_84afc2ff_07a0_4771_9dd7_570fcd85e1dc',
         alg={
             'INPUT' : ILLES_UNIQUE['OUTPUT'],
             'FIELD' : 'UUID',
@@ -553,11 +500,8 @@ class Agregacio:
             'PREFIX' : '',
             'OUTPUT': ''+sortida+''
             }
-        #print(alg)
         pep2 = processing.run('native:joinattributestable', alg, feedback=f)
-        #QgsProject.instance().addMapLayer(pep2['OUTPUT'])
         
-        #QgsProject.instance().addMapLayer(pep['OUTPUT'])      
         alg = {
             'INPUT': pep2['OUTPUT'],
             'COLUMN': 'UUID',
@@ -588,7 +532,6 @@ class Agregacio:
             'OUTPUT': ''+sortida+''
         }
         ILLES_UNIQUE=processing.run('qgis:fieldcalculator', alg, feedback=f)
-        #QgsProject.instance().addMapLayer(ILLES_UNIQUE['OUTPUT'])
         alg={
             'FIELD_LENGTH': 80,
             'FIELD_NAME': 'UUID',
@@ -621,7 +564,6 @@ class Agregacio:
         texte='aggregate(layer:=\''+Detall_MEM+'\', aggregate:=\''+operador+'\',expression:="'+camp_operacio+'", filter:="'+camp_Detall+'"=attribute(@parent,\''+camp_Resum+'\'),concatenator:=\';\')'
 
         Entitat_Resum.addExpressionField( texte, field )
-        #QgsProject.instance().addMapLayer(Entitat_Resum) 
         QgsProject.instance().removeMapLayer(Detall_MEM)
      
         return Entitat_Resum
@@ -646,7 +588,6 @@ class Agregacio:
             'OUTPUT': ''+sortida+''
         }
         ILLES_UNIQUE=processing.run('qgis:fieldcalculator', alg, feedback=f)
-        #QgsProject.instance().addMapLayer(ILLES_UNIQUE['OUTPUT'])
         
         alg={
             'FIELD_LENGTH': 80,
@@ -682,7 +623,6 @@ class Agregacio:
                             },
                             {'aggregate': 'first_value',
                              'delimiter': ';', 
-                             #'input': 'aggregate(layer:=\''+Entitat_Detall+'\', aggregate:=\''+operador+'\',expression:="'+camp_operacio+'", filter:=('+operacion+'( $geometry , geometry( @parent))) '+operacio_logica+' ("'+camp_Detall+'"=attribute(@parent,\''+camp_Resum+'\')),concatenator:=\';\')',
                              'input': 'aggregate(layer:=\''+Detall_MEM+'\', aggregate:=\''+operador+'\',expression:="'+camp_operacio+'", filter:=('+operacion+'( $geometry , geometry( @parent))) '+operacio_logica+' ("'+camp_Detall+'"=attribute(@parent,\''+camp_Resum+'\')),concatenator:=\';\')',
                              'length': -1, 
                              'name': Camp_out, 
@@ -691,9 +631,7 @@ class Agregacio:
                             }],
             'OUTPUT': ''+sortida+''
         }
-        #print (alg_params)
         pep=processing.run('qgis:aggregate', alg_params, feedback=f)
-        #QgsProject.instance().addMapLayer(pep['OUTPUT'])
         QgsProject.instance().removeMapLayer(Detall_MEM)
         alg={
             'INPUT' : ILLES_UNIQUE['OUTPUT'],
@@ -706,11 +644,8 @@ class Agregacio:
             'PREFIX' : '',
             'OUTPUT': ''+sortida+''
             }
-        #print(alg)
         pep2 = processing.run('native:joinattributestable', alg, feedback=f)
-        #QgsProject.instance().addMapLayer(pep2['OUTPUT'])
         
-        #QgsProject.instance().addMapLayer(pep['OUTPUT'])      
         alg = {
             'INPUT': pep2['OUTPUT'],
             'COLUMN': 'UUID',
@@ -718,7 +653,6 @@ class Agregacio:
         }
         
         pep3 = processing.run('qgis:deletecolumn', alg, feedback=f)
-        #print(QgsProject.instance().mapLayers().values())
         pep3['OUTPUT'].setName('Agregacio')
         return pep3['OUTPUT']
    
@@ -749,8 +683,6 @@ class Agregacio:
             QMessageBox.information(None, "Error", "S'ha de seleccionar una entitat de DETALL.")
             return
 
-        #if (self.Operacion_espacial()==999 and self.dlg.Activate_spatial.isChecked()):
-        #if (self.dlg.pestanyesPrincipals.currentIndex()==0):
         if (self.dlg.Espacial_chk.isChecked()):
             if (self.Operacion_espacial()==999):
                 QMessageBox.information(None, "Error", "S'ha de seleccionar una Operació espacial.")
@@ -787,13 +719,10 @@ class Agregacio:
         self.dlg.setEnabled(False)
         Resum_Layer = QgsProject.instance().mapLayersByName(self.dlg.Resum_Legend.currentText())
         Detall_Layer = QgsProject.instance().mapLayersByName(self.dlg.Detall_Legend.currentText())
-        #print(Resum_Layer[0].id())
-        #print(Detall_Layer[0].id())
         QApplication.processEvents()
         camp=self.dlg.Camps_list.currentItem().text()
         Tipus=self.dlg.Camps_list.currentItem().toolTip()
 
-        #if (self.dlg.pestanyesPrincipals.currentIndex()==0):
         if (self.dlg.Espacial_chk.isChecked() and not(self.dlg.Atributs_chk.isChecked())):
             pep=self.Agregacio(Resum_Layer[0].id(),Detall_Layer[0].id(),self.Operacion_espacial(),camp,int(Tipus),self.dlg.Operacio.currentText(),self.dlg.Camp_operacio.toPlainText())
             QgsProject.instance().addMapLayer(pep)
@@ -801,10 +730,7 @@ class Agregacio:
         if (not(self.dlg.Espacial_chk.isChecked()) and (self.dlg.Atributs_chk.isChecked())):
             pep=self.Agregacio_atr(Resum_Layer[0].id(),Detall_Layer[0].id(),self.dlg.field_Resum.toPlainText(),self.dlg.field_Detall.toPlainText(),camp,int(Tipus),self.dlg.Operacio.currentText(),self.dlg.Camp_operacio.toPlainText())
             QgsProject.instance().addMapLayer(pep)
-            #pep=self.Agregacio_atr_addexpresion(Resum_Layer[0],Detall_Layer[0].id(),self.dlg.field_Resum.toPlainText(),self.dlg.field_Detall.toPlainText(),camp,int(Tipus),self.dlg.Operacio.currentText(),self.dlg.Camp_operacio.toPlainText())
-            #QgsProject.instance().addMapLayer(pep)
         if ((self.dlg.Espacial_chk.isChecked()) and (self.dlg.Atributs_chk.isChecked())):
-            #QMessageBox.information(None, "Info", "COMING SOON... ☺") 
             pep=self.Agregacio_espacial_atr(Resum_Layer[0].id(),Detall_Layer[0].id(),self.Operacion_espacial(),self.dlg.field_Resum.toPlainText(),self.dlg.field_Detall.toPlainText(),camp,int(Tipus),self.dlg.Operacio.currentText(),self.dlg.Camp_operacio.toPlainText())
             QgsProject.instance().addMapLayer(pep)
         
@@ -868,20 +794,6 @@ class Agregacio:
             operator='not '
         else:
             operator=''
-        '''
-        if (self.dlg.INTERSECTA.isChecked()):
-            return operator+"intersects"
-        if (self.dlg.TOCA.isChecked()):
-            return operator+"touches"
-        if (self.dlg.CONTE.isChecked()):
-            return operator+"contains"
-        if (self.dlg.SOLAPA.isChecked()):
-            return operator+"overlaps"
-        if (self.dlg.DINS.isChecked()):
-            return operator+"within"
-        if (self.dlg.CREUA.isChecked()):
-            return operator+"crosses"
-        '''
         if (self.dlg.Operacio_cmb.currentText()=="Intersecta"):
             return operator+"intersects"
         if (self.dlg.Operacio_cmb.currentText()=="Toca"):
@@ -897,7 +809,6 @@ class Agregacio:
 
         return 999
     def comprobarValidez(self,vlayer,CRS):        
-        #processing.algorithmHelp("native:shortestpathpointtolayer")
         epsg = CRS
         
         alg_params = {
@@ -909,7 +820,6 @@ class Agregacio:
         layer_repro = processing.run('native:reprojectlayer', alg_params)
 
         parameters= {'ERROR_OUTPUT' : 'memory:',
-                     #'IGNORE_RING_SELF_INTERSECTION' : False,
                      'INPUT_LAYER' : layer_repro['OUTPUT'],
                      'INVALID_OUTPUT' : 'memory:',
                      'METHOD' : 1,
@@ -939,7 +849,7 @@ class Agregacio:
         predefInList = None
         for elem in list:
             try:
-                item = QStandardItem(unicode(elem))
+                item = QStandardItem(str(elem))
             except TypeError:
                 item = QStandardItem(str(elem))
             model.appendRow(item)
@@ -957,7 +867,7 @@ class Agregacio:
         combo.blockSignals (False)
 
     def ompleCombos(self, combo, llista, predef, sort):
-        """Aquesta funci� omple els combos que li passem per par�metres"""
+        """Aquesta funcio omple els combos que li passem per par�metres"""
         combo.blockSignals (True)
         combo.clear()
         model=QStandardItemModel(combo)
@@ -965,7 +875,7 @@ class Agregacio:
         for elem in llista:
             try:
                 if isinstance(elem, tuple):
-                    item = QStandardItem(unicode(elem[0]))
+                    item = QStandardItem(str(elem[0]))
                 else:
                     item = QStandardItem(str(elem))
             except TypeError:

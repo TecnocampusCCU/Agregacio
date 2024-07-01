@@ -6,7 +6,7 @@
 name=Agregacio
 qgisMinimumVersion=3.0
 description=Aquest plugin permet fer agregacions espaciasl i per atributs
-version=Q3.210707
+version=Q3.240701
 author=CCU
 email=jlopez@tecnocampus.cat
 
