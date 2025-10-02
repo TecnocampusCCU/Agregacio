@@ -28,16 +28,14 @@ from os.path import expanduser
 from string import ascii_letters, digits
 
 import processing
-from PyQt5.QtCore import *
-from PyQt5.QtGui import *
-from PyQt5.QtSql import *
-from PyQt5.QtWidgets import (QAction, QApplication, QDockWidget, QMessageBox,
-                             QToolBar)
 from qgis.core import (Qgis, QgsCoordinateReferenceSystem, QgsField,
                        QgsMapLayer, QgsProcessingFeedback, QgsProject)
+from qgis.PyQt.QtCore import *
 from qgis.PyQt.QtCore import QCoreApplication, QSettings, QTranslator
+from qgis.PyQt.QtGui import *
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import QAction
+from qgis.PyQt.QtSql import *
+from qgis.PyQt.QtWidgets import (QAction, QApplication, QDockWidget, QMessageBox, QToolBar)
 from qgis.utils import iface
 
 # Import the code for the dialog
@@ -49,7 +47,7 @@ entitat_poi=""
 Fitxer=""
 Path_Inicial=expanduser("~")
 progress=None
-Versio_modul="V_Q3.240701"
+Versio_modul="V_Q4.251002"
 geometria=""
 QEstudis=None
 Detall_MEM=""
@@ -929,7 +927,7 @@ class Agregacio:
         self.dlg.show()
         
         # Run the dialog event loop
-        result = self.dlg.exec_()
+        result = self.dlg.exec()
         # See if OK was pressed
         if result:
             # Do something useful here - delete the line containing pass and
